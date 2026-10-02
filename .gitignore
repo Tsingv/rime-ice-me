@@ -9,6 +9,8 @@ sync/
 installation.yaml
 user.yaml
 *.custom.yaml
+!rime_ice.custom.yaml
+!double_pinyin_flypy.custom.yaml
 !others/**/*.custom.yaml
 
 custom_phrase_double.txt

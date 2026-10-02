@@ -1,0 +1,10 @@
+patch:
+  "engine/filters/+":
+    - lua_filter@*context_rank_filter
+
+  context_rank_filter:
+    boost: 4
+    scan_limit: 50
+    max_context_chars: 4
+    max_token_chars: 8
+    min_count: 2

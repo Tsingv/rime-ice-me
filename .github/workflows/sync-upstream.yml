@@ -1,0 +1,76 @@
+name: Sync upstream with personal settings
+
+on:
+  schedule:
+    - cron: '23 22 * * *'  # 北京时间每天 06:23
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/sync-upstream.yml'
+      - 'others/script/sync_upstream.py'
+      - 'others/script/tests/**'
+      - 'lua/context_rank_filter.lua'
+      - '*.custom.yaml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository == 'Tsingv/rime-ice-me'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 1
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: others/script/go.mod
+          cache-dependency-path: others/script/go.sum
+      - name: Install validation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.4 luarocks yamllint
+          sudo luarocks install luacheck
+      - name: Check personal sync rules
+        run: |
+          python3 -B -m unittest discover -s others/script/tests -p 'test_*.py'
+          lua5.4 others/script/tests/context_rank_filter_test.lua
+      - name: Fetch and apply upstream
+        run: |
+          git remote add upstream https://github.com/iDvel/rime-ice.git
+          git fetch --depth=1 upstream main
+          python3 -B others/script/sync_upstream.py upstream/main
+      - name: Build dictionaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          make -C others/script build 2>&1 | tee "$RUNNER_TEMP/rime-build.log"
+          if grep -Ein '❌|⚠|警告|错误|warning|error|has # but not|empty line' "$RUNNER_TEMP/rime-build.log"; then
+            echo 'Build diagnostics require review; refusing to publish'
+            exit 1
+          fi
+      - name: Validate synchronized files
+        run: |
+          make -C others/script lint
+          lua5.4 others/script/tests/context_rank_filter_test.lua
+          python3 -B -m unittest discover -s others/script/tests -p 'test_*.py'
+          git diff --check
+      - name: Commit and push validated update
+        run: |
+          git add --all
+          if git diff --cached --quiet; then
+            echo 'Already synchronized'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m "chore(sync): 同步雾凇上游并保留个人配置" -m "上游提交：$(git rev-parse upstream/main)"
+          git push origin HEAD:main
